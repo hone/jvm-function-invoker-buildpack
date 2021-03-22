@@ -8,7 +8,7 @@ use libcnb::{
     data,
     platform::Platform,
 };
-use std::{ffi::OsStr, fs, process::Command};
+use std::{fs, process::Command};
 
 fn main() -> anyhow::Result<()> {
     cnb_runtime_build(build);
@@ -101,12 +101,10 @@ This is usually caused by intermittent network issues. Please try again and cont
         function_bundle_layer.write_content_metadata()?;
 
         let exit_status = Command::new("java")
-            .args(&[
-                OsStr::new("-jar"),
-                runtime_jar_path.as_os_str(),
-                OsStr::new("bundle"),
-                ctx.app_dir.as_os_str(),
-            ])
+            .arg("-jar")
+            .arg(&runtime_jar_path)
+            .arg("bundle")
+            .arg(&ctx.app_dir)
             .spawn()?
             .wait()?;
 
