@@ -8,7 +8,7 @@ use libcnb::{
     data,
     platform::Platform,
 };
-use std::{fs, process::Command};
+use std::{ffi::OsStr, fs, process::Command};
 
 fn main() -> anyhow::Result<()> {
     cnb_runtime_build(build);
@@ -39,15 +39,7 @@ fn build(ctx: GenericBuildContext) -> anyhow::Result<()> {
         .get("runtime_jar_sha256")
         .unwrap_or(&empty_string);
     let runtime_jar_path = runtime_layer.as_path().join("runtime.jar");
-    let runtime_jar_str = runtime_jar_path
-        .to_str()
-        .ok_or_else(|| anyhow!("runtime jar path is not a UTF-8 string"))?;
     let mut function_bundle_layer = ctx.layer("function-bundle")?;
-    let function_bundle_layer_string = function_bundle_layer
-        .as_path()
-        .to_str()
-        .ok_or_else(|| anyhow!("function bundle layer is not a UTF-8 string"))?
-        .to_owned();
 
     if buildpack_sha256 == runtime_layer_sha256 && runtime_jar_path.exists() {
         info("Installed Java function runtime from cache")?;
@@ -110,13 +102,10 @@ This is usually caused by intermittent network issues. Please try again and cont
 
         let exit_status = Command::new("java")
             .args(&[
-                "-jar",
-                runtime_jar_str,
-                "bundle",
-                ctx.app_dir
-                    .to_str()
-                    .ok_or_else(|| anyhow!("app dir is not a UTF-8 string"))?,
-                &function_bundle_layer_string,
+                OsStr::new("-jar"),
+                runtime_jar_path.as_os_str(),
+                OsStr::new("bundle"),
+                ctx.app_dir.as_os_str(),
             ])
             .spawn()?
             .wait()?;
@@ -182,7 +171,8 @@ The output above might contain hints what caused this error to happen.
     let mut launch = data::launch::Launch::new();
     let cmd = format!(
         "java -jar {} serve {} -p \\${{PORT:-8080}}",
-        runtime_jar_str, &function_bundle_layer_string
+        runtime_jar_path.display(),
+        function_bundle_layer.as_path().display(),
     );
     launch.processes.push(data::launch::Process::new(
         "web",
