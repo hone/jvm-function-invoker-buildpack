@@ -1,32 +1,14 @@
 use anyhow::anyhow;
+use jvm_function_invoker_buildpack::{
+    function_bundle,
+    util::{self, logger::*},
+};
 use libcnb::{
     build::{cnb_runtime_build, GenericBuildContext},
     data,
     platform::Platform,
 };
-use serde::Deserialize;
-use sha2::Digest;
-use std::{
-    fmt::Display,
-    fs,
-    io::{self, Write},
-    process::Command,
-};
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-
-#[derive(Deserialize)]
-struct FunctionBundleToml {
-    function: Function,
-}
-
-#[derive(Deserialize)]
-struct Function {
-    class: String,
-    payload_class: String,
-    payload_media_type: String,
-    return_class: String,
-    return_media_type: String,
-}
+use std::{fs, process::Command};
 
 fn main() -> anyhow::Result<()> {
     cnb_runtime_build(build);
@@ -95,7 +77,7 @@ fn build(ctx: GenericBuildContext) -> anyhow::Result<()> {
         let runtime_url_str = runtime_url
             .as_str()
             .ok_or_else(|| anyhow!("buildpack.toml's `metadata.runtime.url` is not a string"))?;
-        download(runtime_url_str,
+        util::download(runtime_url_str,
             &runtime_jar_path,
         ).map_err(|_| {
 	  error("Download of function runtime failed", format!(r#"
@@ -106,7 +88,7 @@ This is usually caused by intermittent network issues. Please try again and cont
         })?;
         info("Function runtime download successful")?;
 
-        //        if buildpack_sha256 != &toml::Value::String(sha256(&fs::read(&runtime_jar_path)?)) {
+        //        if buildpack_sha256 != &toml::Value::String(util::sha256(&fs::read(&runtime_jar_path)?)) {
         //            error(
         //                "Function runtime integrity check failed",
         //                r#"
@@ -179,7 +161,7 @@ The output above might contain hints what caused this error to happen.
             }?;
         }
 
-        let function_bundle_toml: FunctionBundleToml = toml::from_slice(&fs::read(
+        let function_bundle_toml: function_bundle::Toml = toml::from_slice(&fs::read(
             &function_bundle_layer.as_path().join("function-bundle.toml"),
         )?)?;
 
@@ -210,66 +192,4 @@ The output above might contain hints what caused this error to happen.
     )?);
 
     Ok(())
-}
-
-fn header(msg: impl Display) -> anyhow::Result<()> {
-    let mut stdout = StandardStream::stdout(ColorChoice::Always);
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Magenta)).set_bold(true))?;
-    writeln!(&mut stdout, "\n[{}]", msg)?;
-    stdout.reset()?;
-
-    Ok(())
-}
-
-fn info(msg: impl Display) -> anyhow::Result<()> {
-    let mut stdout = StandardStream::stdout(ColorChoice::Always);
-    stdout.reset()?;
-    writeln!(&mut stdout, "[INFO] {}", msg)?;
-
-    Ok(())
-}
-
-fn error(header: impl Display, msg: impl Display) -> anyhow::Result<()> {
-    let mut stderr = StandardStream::stderr(ColorChoice::Always);
-    stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
-    writeln!(&mut stderr, "\n[ERROR: {}]", header)?;
-    stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
-    writeln!(&mut stderr, "{}", msg)?;
-    stderr.reset()?;
-
-    Err(anyhow!(format!("{}", header)))
-}
-
-fn debug(msg: impl Display, debug: bool) -> anyhow::Result<()> {
-    if debug {
-        let mut stdout = StandardStream::stdout(ColorChoice::Always);
-        stdout.reset()?;
-        writeln!(&mut stdout, "[DEBUG] {}", msg)?;
-    }
-
-    Ok(())
-}
-
-fn warning(header: impl Display, msg: impl Display) -> anyhow::Result<()> {
-    let mut stdout = StandardStream::stdout(ColorChoice::Always);
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))?;
-    writeln!(&mut stdout, "\n[WARNING: {}]", header)?;
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
-    writeln!(&mut stdout, "{}", msg)?;
-    stdout.reset();
-
-    Ok(())
-}
-
-fn download(uri: impl AsRef<str>, dst: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
-    let response = reqwest::blocking::get(uri.as_ref())?;
-    let mut content = io::Cursor::new(response.bytes()?);
-    let mut file = fs::File::create(dst.as_ref())?;
-    io::copy(&mut content, &mut file)?;
-
-    Ok(())
-}
-
-fn sha256(data: &[u8]) -> String {
-    format!("{:x}", sha2::Sha256::digest(data))
 }
