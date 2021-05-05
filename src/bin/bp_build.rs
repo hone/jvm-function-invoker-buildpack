@@ -91,80 +91,80 @@ This is usually caused by intermittent network issues. Please try again and cont
         //        }
 
         info("Function runtime installation successful")?;
+    }
 
-        header("Detecting function")?;
+    header("Detecting function")?;
 
-        let mut content_metadata = function_bundle_layer.mut_content_metadata();
-        content_metadata.launch = true;
-        content_metadata.build = false;
-        content_metadata.cache = false;
-        function_bundle_layer.write_content_metadata()?;
+    let mut content_metadata = function_bundle_layer.mut_content_metadata();
+    content_metadata.launch = true;
+    content_metadata.build = false;
+    content_metadata.cache = false;
+    function_bundle_layer.write_content_metadata()?;
 
-        let exit_status = Command::new("java")
-            .arg("-jar")
-            .arg(&runtime_jar_path)
-            .arg("bundle")
-            .arg(&ctx.app_dir)
-            .spawn()?
-            .wait()?;
+    let exit_status = Command::new("java")
+        .arg("-jar")
+        .arg(&runtime_jar_path)
+        .arg("bundle")
+        .arg(&ctx.app_dir)
+        .spawn()?
+        .wait()?;
 
-        if let Some(code) = exit_status.code() {
-            match code {
-                0 => {
-                    info("Detection successful")?;
-                    Ok(())
-                }
-                1 => error(
-                    "No functions found",
-                    r#"
+    if let Some(code) = exit_status.code() {
+        match code {
+            0 => {
+                info("Detection successful")?;
+                Ok(())
+            }
+            1 => error(
+                "No functions found",
+                r#"
 Your project does not seem to contain any Java functions.
 The output above might contain information about issues with your function.
 "#,
-                ),
-                2 => error(
-                    "Multiple functions found",
-                    r#"
+            ),
+            2 => error(
+                "Multiple functions found",
+                r#"
 Your project contains multiple Java functions.
 Currently, only projects that contain exactly one (1) function are supported.
 "#,
+            ),
+            3..=6 => error(
+                "Detection failed",
+                format!(
+                    r#"Function detection failed with internal error "{}""#,
+                    code
                 ),
-                3..=6 => error(
-                    "Detection failed",
-                    format!(
-                        r#"Function detection failed with internal error "{}""#,
-                        code
-                    ),
-                ),
-                _ => error(
-                    "Detection failed",
-                    format!(
-                        r#"
+            ),
+            _ => error(
+                "Detection failed",
+                format!(
+                    r#"
 Function detection failed with unexpected error code {}.
 The output above might contain hints what caused this error to happen.
 "#,
-                        code
-                    ),
+                    code
                 ),
-            }?;
-        }
-
-        let function_bundle_toml: function_bundle::Toml = toml::from_slice(&fs::read(
-            &function_bundle_layer.as_path().join("function-bundle.toml"),
-        )?)?;
-
-        header(format!(
-            "Detected function: {}",
-            function_bundle_toml.function.class
-        ))?;
-        info(format!(
-            "Payload type: {}",
-            function_bundle_toml.function.payload_class
-        ))?;
-        info(format!(
-            "Return type: {}",
-            function_bundle_toml.function.return_class
-        ))?;
+            ),
+        }?;
     }
+
+    let function_bundle_toml: function_bundle::Toml = toml::from_slice(&fs::read(
+        &function_bundle_layer.as_path().join("function-bundle.toml"),
+    )?)?;
+
+    header(format!(
+        "Detected function: {}",
+        function_bundle_toml.function.class
+    ))?;
+    info(format!(
+        "Payload type: {}",
+        function_bundle_toml.function.payload_class
+    ))?;
+    info(format!(
+        "Return type: {}",
+        function_bundle_toml.function.return_class
+    ))?;
 
     let mut launch = data::launch::Launch::new();
     let cmd = format!(
