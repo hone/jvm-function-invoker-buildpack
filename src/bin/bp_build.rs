@@ -61,9 +61,9 @@ fn contribute_runtime_layer(
             .insert("runtime_jar_url".to_owned(), runtime_url.clone());
         // SHA256 checksum checking is disabled for as the function runtime is very unstable and is updated very often.
         // We don't want to trigger a whole release cycle just for a minor update. This code must be reactivated for beta/GA!
-        //content_metadata
-        //    .metadata
-        //    .insert("runtime_jar_sha256".to_owned(), buildpack_sha256.clone());
+        content_metadata
+            .metadata
+            .insert("runtime_jar_sha256".to_owned(), buildpack_sha256.clone());
         runtime_layer.write_content_metadata()?;
 
         debug("Function runtime layer successfully created", heroku_debug)?;
@@ -83,15 +83,15 @@ This is usually caused by intermittent network issues. Please try again and cont
         })?;
         info("Function runtime download successful")?;
 
-        //        if buildpack_sha256 != &toml::Value::String(util::sha256(&fs::read(&runtime_jar_path)?)) {
-        //            error(
-        //                "Function runtime integrity check failed",
-        //                r#"
-        //We could not verify the integrity of the downloaded function runtime.
-        //Please try again and contact us should the error persist.
-        //"#,
-        //            )?;
-        //        }
+        if buildpack_sha256 != &toml::Value::String(util::sha256(&fs::read(&runtime_jar_path)?)) {
+            error(
+                "Function runtime integrity check failed",
+                r#"
+We could not verify the integrity of the downloaded function runtime.
+Please try again and contact us should the error persist.
+        "#,
+            )?;
+        }
 
         info("Function runtime installation successful")?;
     }
