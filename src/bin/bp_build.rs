@@ -6,9 +6,12 @@ use jvm_function_invoker_buildpack::{
 use libcnb::{
     build::{cnb_runtime_build, GenericBuildContext},
     data,
+    layer::Layer,
     platform::Platform,
 };
-use std::{fs, process::Command};
+use std::{fs, path::Path, process::Command};
+
+const RUNTIME_JAR_FILE_NAME: &str = "runtime.jar";
 
 fn main() -> anyhow::Result<()> {
     cnb_runtime_build(build);
@@ -16,15 +19,16 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn build(ctx: GenericBuildContext) -> anyhow::Result<()> {
-    let heroku_debug = ctx.platform.env().var("HEROKU_BUILDPACK_DEBUG").is_ok();
+fn contribute_runtime_layer(
+    ctx: &GenericBuildContext,
+    heroku_debug: bool,
+) -> anyhow::Result<Layer> {
     header("Installing Java function runtime")?;
 
     let mut runtime_layer = ctx.layer("sf-fx-runtime-java")?;
     let buildpack_toml: data::buildpack::BuildpackToml = toml::from_str(&fs::read_to_string(
         ctx.buildpack_dir.join("buildpack.toml"),
     )?)?;
-
     let buildpack_metadata_runtime = buildpack_toml
         .metadata
         .get("runtime")
@@ -38,8 +42,7 @@ fn build(ctx: GenericBuildContext) -> anyhow::Result<()> {
         .metadata
         .get("runtime_jar_sha256")
         .unwrap_or(&empty_string);
-    let runtime_jar_path = runtime_layer.as_path().join("runtime.jar");
-    let mut function_bundle_layer = ctx.layer("function-bundle")?;
+    let runtime_jar_path = runtime_layer.as_path().join(RUNTIME_JAR_FILE_NAME);
 
     if buildpack_sha256 == runtime_layer_sha256 && runtime_jar_path.exists() {
         info("Installed Java function runtime from cache")?;
@@ -93,8 +96,17 @@ This is usually caused by intermittent network issues. Please try again and cont
         info("Function runtime installation successful")?;
     }
 
+    Ok(runtime_layer)
+}
+
+fn contribute_function_bundle_layer(
+    ctx: &GenericBuildContext,
+    runtime_jar_path: impl AsRef<Path>,
+    heroku_debug: bool,
+) -> anyhow::Result<Layer> {
     header("Detecting function")?;
 
+    let mut function_bundle_layer = ctx.layer("function-bundle")?;
     let mut content_metadata = function_bundle_layer.mut_content_metadata();
     content_metadata.launch = true;
     content_metadata.build = false;
@@ -103,7 +115,7 @@ This is usually caused by intermittent network issues. Please try again and cont
 
     let exit_status = Command::new("java")
         .arg("-jar")
-        .arg(&runtime_jar_path)
+        .arg(runtime_jar_path.as_ref())
         .arg("bundle")
         .arg(&ctx.app_dir)
         .spawn()?
@@ -165,6 +177,17 @@ The output above might contain hints what caused this error to happen.
         "Return type: {}",
         function_bundle_toml.function.return_class
     ))?;
+
+    Ok(function_bundle_layer)
+}
+
+fn build(ctx: GenericBuildContext) -> anyhow::Result<()> {
+    let heroku_debug = ctx.platform.env().var("HEROKU_BUILDPACK_DEBUG").is_ok();
+
+    let runtime_layer = contribute_runtime_layer(&ctx, heroku_debug)?;
+    let runtime_jar_path = runtime_layer.as_path().join(RUNTIME_JAR_FILE_NAME);
+    let function_bundle_layer =
+        contribute_function_bundle_layer(&ctx, &runtime_jar_path, heroku_debug)?;
 
     let mut launch = data::launch::Launch::new();
     let cmd = format!(
