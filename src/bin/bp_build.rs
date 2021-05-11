@@ -19,6 +19,31 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn contribute_opt_layer(ctx: &GenericBuildContext, heroku_debug: bool) -> anyhow::Result<Layer> {
+    let mut layer = ctx.layer("opt")?;
+    let mut content_metadata = layer.mut_content_metadata();
+    content_metadata.launch = true;
+    content_metadata.build = true;
+    content_metadata.cache = false;
+    layer.write_content_metadata()?;
+
+    let contents = include_str!("../../opt/run.sh");
+    let run_sh_path = layer.as_path().join("run.sh");
+    fs::write(&run_sh_path, contents)?;
+    #[cfg(target_family = "unix")]
+    set_executable(&run_sh_path)?;
+
+    Ok(layer)
+}
+
+#[cfg(target_family = "unix")]
+fn set_executable(path: impl AsRef<Path>) -> anyhow::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new().mode(0o775).open(path)?;
+
+    Ok(())
+}
+
 fn contribute_runtime_layer(
     ctx: &GenericBuildContext,
     heroku_debug: bool,
@@ -184,6 +209,7 @@ The output above might contain hints what caused this error to happen.
 fn build(ctx: GenericBuildContext) -> anyhow::Result<()> {
     let heroku_debug = ctx.platform.env().var("HEROKU_BUILDPACK_DEBUG").is_ok();
 
+    let opt_layer = contribute_opt_layer(&ctx, heroku_debug)?;
     let runtime_layer = contribute_runtime_layer(&ctx, heroku_debug)?;
     let runtime_jar_path = runtime_layer.as_path().join(RUNTIME_JAR_FILE_NAME);
     let function_bundle_layer =
@@ -191,7 +217,8 @@ fn build(ctx: GenericBuildContext) -> anyhow::Result<()> {
 
     let mut launch = data::launch::Launch::new();
     let cmd = format!(
-        "java -jar {} serve {} -p \\${{PORT:-8080}}",
+        "{}/run.sh {} {}",
+        opt_layer.as_path().display(),
         runtime_jar_path.display(),
         function_bundle_layer.as_path().display(),
     );
